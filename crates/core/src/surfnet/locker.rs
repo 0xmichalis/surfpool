@@ -67,7 +67,9 @@ use uuid::Uuid;
 use super::{
     AccountFactory, AccountSource, CoupledAccount, GetAccountResult, GetTransactionResult,
     GeyserEvent, GeyserTransactionEvent, LocalSignatureStatusOrSubscription,
-    SignatureSubscriptionType, SurfnetSvm, remote::SurfnetRemoteClient, svm::AccountUpdatePolicy,
+    SignatureSubscriptionType, SurfnetSvm,
+    remote::SurfnetRemoteClient,
+    svm::{AccountUpdatePolicy, ReadSlot},
 };
 use crate::{
     error::{AirdropError, SurfpoolError, SurfpoolResult},
@@ -3977,6 +3979,17 @@ impl SurfnetSvmLocker {
         self.with_svm_reader(|svm_reader| svm_reader.slot_for_commitment(commitment))
     }
 
+    /// Resolves `commitment` to a slot and refuses a `min_context_slot` above it.
+    /// Internally, this function calls [`SurfnetSvm::read_slot`] under a read guard. This
+    /// should be called before subsequent locker reads, so the context slot is valid for those reads.
+    pub fn read_slot(
+        &self,
+        commitment: Option<CommitmentConfig>,
+        min_context_slot: Option<Slot>,
+    ) -> jsonrpc_core::Result<ReadSlot> {
+        self.with_svm_reader(|svm| svm.read_slot(commitment, min_context_slot))
+    }
+
     /// Executes an airdrop via the underlying SVM.
     pub fn airdrop(
         &self,
@@ -4032,7 +4045,7 @@ impl SurfnetSvmLocker {
         &self,
         account_pubkey: &Pubkey,
         encoding: Option<UiAccountEncoding>,
-    ) -> Receiver<UiAccount> {
+    ) -> Receiver<(Slot, UiAccount)> {
         // Handles the locking/unlocking safely
         self.with_svm_writer(|svm_writer| {
             svm_writer.subscribe_for_account_updates(account_pubkey, encoding)
@@ -4045,7 +4058,7 @@ impl SurfnetSvmLocker {
         program_id: &Pubkey,
         encoding: Option<UiAccountEncoding>,
         filters: Option<Vec<RpcFilterType>>,
-    ) -> Receiver<RpcKeyedAccount> {
+    ) -> Receiver<(Slot, RpcKeyedAccount)> {
         self.with_svm_writer(|svm_writer| {
             svm_writer.subscribe_for_program_updates(program_id, encoding, filters)
         })

@@ -1519,6 +1519,14 @@ pub trait SurfnetCheatcodes {
     ) -> BoxFuture<Result<RpcResponse<()>>>;
 }
 
+#[allow(clippy::disallowed_methods)] // cheatcodes accept no minContextSlot; each picks its own slot
+fn cheatcode_response<T>(slot: Slot, value: T) -> RpcResponse<T> {
+    RpcResponse {
+        context: RpcResponseContext::new(slot),
+        value,
+    }
+}
+
 #[derive(Clone)]
 pub struct SurfnetCheatcodesRpc {
     pub registered_methods: Arc<RwLock<Vec<String>>>,
@@ -1603,10 +1611,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
 
             svm_locker.apply_account_update(account_to_set, AccountUpdatePolicy::Authoritative)?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(latest_absolute_slot),
-                value: (),
-            })
+            Ok(cheatcode_response(latest_absolute_slot, ()))
         })
     }
 
@@ -1676,10 +1681,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             }
         }
 
-        Ok(RpcResponse {
-            value: (),
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            (),
+        ))
     }
 
     fn enable_cheatcode(
@@ -1725,10 +1730,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             }
         }
 
-        Ok(RpcResponse {
-            value: (),
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            (),
+        ))
     }
 
     fn set_token_account(
@@ -1889,10 +1894,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             })?;
             svm_locker.apply_account_update(token_account, AccountUpdatePolicy::Authoritative)?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(slot),
-                value: (),
-            })
+            Ok(cheatcode_response(slot, ()))
         })
     }
 
@@ -1934,10 +1936,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 .clone_program_account(&remote_ctx, &source_program_id, &destination_program_id)
                 .await?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(slot),
-                value: (),
-            })
+            Ok(cheatcode_response(slot, ()))
         })
     }
 
@@ -1972,10 +1971,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 .get_profile_result(key, &config)?
                 .ok_or(SurfpoolError::expected_profile_not_found(&key))?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(slot),
-                value: ui_result,
-            })
+            Ok(cheatcode_response(slot, ui_result))
         })
     }
 
@@ -1989,10 +1985,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let svm_locker = meta.get_svm_locker()?;
         let profiles = svm_locker.get_profile_results_by_tag(tag, &config)?;
         let slot = svm_locker.get_latest_absolute_slot();
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(slot),
-            value: profiles,
-        })
+        Ok(cheatcode_response(slot, profiles))
     }
 
     fn set_supply(
@@ -2034,10 +2027,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 svm_writer.get_latest_absolute_slot()
             });
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(latest_absolute_slot),
-                value: (),
-            })
+            Ok(cheatcode_response(latest_absolute_slot, ()))
         })
     }
 
@@ -2072,10 +2062,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 .set_program_authority(&remote_ctx, program_id, new_authority)
                 .await?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(slot),
-                value: (),
-            })
+            Ok(cheatcode_response(slot, ()))
         })
     }
 
@@ -2092,10 +2079,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             .as_ref()
             .map(|pr| pr.slot)
             .unwrap_or_else(|| svm_locker.get_latest_absolute_slot());
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(context_slot),
-            value: profile_result,
-        })
+        Ok(cheatcode_response(context_slot, profile_result))
     }
 
     fn register_idl(
@@ -2109,10 +2093,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             Err(e) => return Err(e.into()),
         };
         svm_locker.register_idl(idl, slot)?;
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-            value: (),
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            (),
+        ))
     }
 
     fn get_idl(
@@ -2131,10 +2115,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         };
         let idl = svm_locker.get_idl(&program_id, slot);
         let slot = slot.unwrap_or_else(|| svm_locker.get_latest_absolute_slot());
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(slot),
-            value: idl,
-        })
+        Ok(cheatcode_response(slot, idl))
     }
 
     fn get_local_signatures(
@@ -2150,12 +2131,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let limit = limit.unwrap_or(50);
         let latest = svm_locker.get_latest_absolute_slot();
         if limit == 0 {
-            return Box::pin(async move {
-                Ok(RpcResponse {
-                    context: RpcResponseContext::new(latest),
-                    value: Vec::new(),
-                })
-            });
+            return Box::pin(async move { Ok(cheatcode_response(latest, Vec::new())) });
         }
 
         let mut items: Vec<(
@@ -2198,12 +2174,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             })
             .collect();
 
-        Box::pin(async move {
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(latest),
-                value,
-            })
-        })
+        Box::pin(async move { Ok(cheatcode_response(latest, value)) })
     }
 
     fn pause_clock(&self, meta: Self::Metadata) -> Result<EpochInfo> {
@@ -2265,10 +2236,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let config = config.unwrap_or_default();
         let include_owned_accounts = config.include_owned_accounts.unwrap_or_default();
         svm_locker.reset_account(pubkey, include_owned_accounts)?;
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-            value: (),
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            (),
+        ))
     }
 
     fn reset_network(&self, meta: Self::Metadata) -> BoxFuture<Result<RpcResponse<()>>> {
@@ -2285,10 +2256,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
 
         Box::pin(async move {
             svm_locker.reset_network(&remote_client).await?;
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-                value: (),
-            })
+            Ok(cheatcode_response(
+                svm_locker.get_latest_absolute_slot(),
+                (),
+            ))
         })
     }
 
@@ -2314,10 +2285,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             svm_locker
                 .insert_offline_account(pubkey, include_owned_accounts)
                 .await?;
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-                value: (),
-            })
+            Ok(cheatcode_response(
+                svm_locker.get_latest_absolute_slot(),
+                (),
+            ))
         })
     }
 
@@ -2332,10 +2303,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let config = config.unwrap_or_default();
         let include_owned_accounts = config.include_owned_accounts.unwrap_or_default();
         svm_locker.stream_account(pubkey, include_owned_accounts)?;
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-            value: (),
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            (),
+        ))
     }
 
     fn stream_accounts(
@@ -2349,10 +2320,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             let include_owned_accounts = entry.include_owned_accounts.unwrap_or_default();
             svm_locker.stream_account(pubkey, include_owned_accounts)?;
         }
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-            value: (),
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            (),
+        ))
     }
 
     fn get_streamed_accounts(
@@ -2370,10 +2341,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             GetStreamedAccountsResponse::from_iter(accounts)
         });
 
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
             value,
-        })
+        ))
     }
 
     fn get_surfnet_info(
@@ -2395,10 +2366,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let value =
             GetSurfnetInfoResponse::with_startup(runbook_executions, startup_status, started_at);
 
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
             value,
-        })
+        ))
     }
 
     fn get_confidential_balance(
@@ -2446,10 +2417,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             let balance = decrypt_confidential_balances(&account.data, &keys)
                 .map_err(Error::invalid_params)?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(slot),
-                value: balance,
-            })
+            Ok(cheatcode_response(slot, balance))
         })
     }
 
@@ -2460,10 +2428,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
     ) -> Result<RpcResponse<DeriveConfidentialKeysResponse>> {
         let svm_locker = meta.get_svm_locker()?;
         let keys = derive_confidential_keys(&signature).map_err(Error::invalid_params)?;
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-            value: keys,
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            keys,
+        ))
     }
 
     fn write_program(
@@ -2522,10 +2490,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 .write_program(program_id, authority, offset, &data, &remote_ctx)
                 .await?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(slot),
-                value: (),
-            })
+            Ok(cheatcode_response(slot, ()))
         })
     }
 
@@ -2537,10 +2502,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let config = config.unwrap_or_default();
         let svm_locker = meta.get_svm_locker()?;
         let snapshot = svm_locker.export_snapshot(config)?;
-        Ok(RpcResponse {
-            context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-            value: snapshot,
-        })
+        Ok(cheatcode_response(
+            svm_locker.get_latest_absolute_slot(),
+            snapshot,
+        ))
     }
 
     fn register_scenario(
@@ -2581,10 +2546,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                     data: None,
                 })?;
 
-            Ok(RpcResponse {
-                context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
-                value: (),
-            })
+            Ok(cheatcode_response(
+                svm_locker.get_latest_absolute_slot(),
+                (),
+            ))
         })
     }
 }
