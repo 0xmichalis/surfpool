@@ -7609,7 +7609,15 @@ async fn test_ws_signature_subscribe(subscription_type: SignatureSubscriptionTyp
     use crossbeam_channel::unbounded;
     use solana_system_interface::instruction as system_instruction;
 
-    let (svm_instance, _simnet_events_rx, _geyser_events_rx) = SurfnetSvm::default();
+    let (mut svm_instance, _simnet_events_rx, _geyser_events_rx) = SurfnetSvm::default();
+    // Leave epoch 0, where the epoch slot index equals the absolute slot (#896).
+    svm_instance
+        .travel_to(svm_instance.latest_epoch_info.slots_in_epoch + 100)
+        .unwrap();
+    assert_ne!(
+        svm_instance.latest_epoch_info.slot_index,
+        svm_instance.latest_epoch_info.absolute_slot
+    );
 
     let svm_locker = SurfnetSvmLocker::new(svm_instance);
 
@@ -7631,6 +7639,7 @@ async fn test_ws_signature_subscribe(subscription_type: SignatureSubscriptionTyp
         recent_blockhash,
     );
     let signature = tx.signatures[0];
+    let transaction_slot = svm_locker.get_latest_absolute_slot();
 
     // subscribe with processed commitment
     let notification_rx =
@@ -7667,9 +7676,9 @@ async fn test_ws_signature_subscribe(subscription_type: SignatureSubscriptionTyp
         error_opt.is_none(),
         "Transaction should succeed without error"
     );
-    println!(
-        "✓ Received {} signature notification at slot {}",
-        subscription_type, slot
+    assert_eq!(
+        slot, transaction_slot,
+        "{subscription_type} notification must carry the absolute slot"
     );
 }
 

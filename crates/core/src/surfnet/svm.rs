@@ -2845,7 +2845,6 @@ impl SurfnetSvm {
     fn confirm_transactions(&mut self) -> Result<(Vec<Signature>, u64), SurfpoolError> {
         let mut confirmed_transactions = vec![];
         let mut num_failed: u64 = 0;
-        let slot = self.latest_epoch_info.slot_index;
         let current_slot = self.latest_epoch_info.absolute_slot;
 
         while let Some((tx, status_tx, error)) =
@@ -2868,7 +2867,7 @@ impl SurfnetSvm {
             self.notify_signature_subscribers(
                 SignatureSubscriptionType::confirmed(),
                 &signature,
-                slot,
+                current_slot,
                 error,
             );
 
