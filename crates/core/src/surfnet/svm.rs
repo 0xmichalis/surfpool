@@ -111,7 +111,9 @@ use crate::{
     },
     storage::{OverlayStorage, Storage, StorageBackend},
     surfnet::{
-        LogsSubscriptionData, locker::is_supported_token_program, surfnet_lite_svm::SurfnetLiteSvm,
+        LogsSubscriptionData,
+        locker::is_supported_token_program,
+        surfnet_lite_svm::{MANAGED_SYSVARS, SurfnetLiteSvm},
     },
     types::{
         GeyserAccountUpdate, MintAccount, OfflineAccountConfig, SerializableAccountAdditionalData,
@@ -413,16 +415,6 @@ fn json_to_txtx_value(json: &serde_json::Value) -> SurfpoolResult<Value> {
 
 pub type AccountOwner = Pubkey;
 
-/// The sysvars Surfpool rewrites through `set_sysvar` as blocks advance and the clock travels,
-/// outside [`SurfnetSvm::record_account_write`]. Reads cover them as written at the tip.
-const REWRITTEN_SYSVARS: [Pubkey; 5] = [
-    solana_sdk_ids::sysvar::clock::ID,
-    solana_sdk_ids::sysvar::epoch_schedule::ID,
-    solana_sdk_ids::sysvar::last_restart_slot::ID,
-    solana_sdk_ids::sysvar::recent_blockhashes::ID,
-    solana_sdk_ids::sysvar::slot_hashes::ID,
-];
-
 /// The slot a read at some commitment answers for, with its `minContextSlot` already judged.
 /// Only [`SurfnetSvm::read_slot`] makes one.
 #[derive(Clone, Copy, Debug)]
@@ -439,10 +431,14 @@ impl ReadSlot {
     /// than the data it carries.
     pub fn covering(self, svm: &SurfnetSvm, pubkeys: &[Pubkey]) -> Self {
         let tip = svm.get_latest_absolute_slot();
+        if self.0 == tip {
+            return self;
+        }
         pubkeys
             .iter()
             .filter_map(|pubkey| {
-                if REWRITTEN_SYSVARS.contains(pubkey) {
+                // Written at every block, outside `record_account_write`.
+                if MANAGED_SYSVARS.iter().any(|(id, _)| id == pubkey) {
                     Some(tip)
                 } else {
                     svm.account_update_slots.get(pubkey).copied()
@@ -616,7 +612,7 @@ pub struct SurfnetSvm {
     startup_status_watch_tx: tokio::sync::watch::Sender<SurfnetStartupStatus>,
     pub account_update_slots: HashMap<Pubkey, Slot>,
     /// The latest slot in `account_update_slots`, so a scan covers every write without walking
-    /// it. Both change only through [`Self::record_account_write`].
+    /// it. Both grow only through [`Self::record_account_write`] and empty on a network reset.
     pub latest_account_write_slot: Slot,
     pub streamed_accounts: Box<dyn Storage<String, bool>>,
     pub recent_blockhashes: VecDeque<(SyntheticBlockhash, i64)>,
@@ -2606,6 +2602,8 @@ impl SurfnetSvm {
         self.runbook_executions.clear();
         self.streamed_accounts.clear()?;
         self.scheduled_overrides.clear()?;
+        self.account_update_slots.clear();
+        self.latest_account_write_slot = 0;
 
         let current_time = chrono::Utc::now().timestamp_millis() as u64;
         self.updated_at = current_time;
@@ -6995,6 +6993,37 @@ mod tests {
             last_restart_slot,
             "after a network reset"
         );
+    }
+
+    /// A reset discards the accounts and rewinds the chain, so reads no longer cover the writes
+    /// made before it.
+    #[test]
+    fn a_network_reset_forgets_the_writes_reads_cover() {
+        let (mut svm, _events_rx, _geyser_rx) = TestType::in_memory().initialize_svm();
+        let pubkey = Pubkey::new_unique();
+        svm.travel_to(10_000).unwrap();
+        svm.set_account(
+            &pubkey,
+            Account {
+                lamports: 1_000_000,
+                ..Account::default()
+            },
+        )
+        .unwrap();
+
+        let epoch_schedule = SurfnetSvm::default_epoch_schedule();
+        svm.reset_network(
+            SurfnetSvm::default_epoch_info(&epoch_schedule),
+            epoch_schedule,
+        )
+        .unwrap();
+
+        assert!(svm.get_latest_absolute_slot() < 10_000);
+        let read = svm
+            .read_slot(Some(CommitmentConfig::confirmed()), None)
+            .unwrap();
+        assert_eq!(read.covering(&svm, &[pubkey]).slot(), read.slot());
+        assert_eq!(read.covering_every_account(&svm).slot(), read.slot());
     }
 
     #[test_case(TestType::sqlite(); "with on-disk sqlite db")]
